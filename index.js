@@ -3,7 +3,7 @@ const cors = require('cors');
 const pool = require('./database');
 
 const app = express();
-const port = process.env.PORT || 3000;
+
 
 app.use(cors());
 app.use(express.json());
@@ -249,8 +249,8 @@ app.delete('/employees/:id', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+app.listen(process.env.PORT, () => {
+  console.log(`Server running on port ${process.env.PORT}`);
 }).on('error', (err) => {
   console.error('Server error:', err);
 });
