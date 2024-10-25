@@ -67,26 +67,170 @@ app.post('/employees', async (req, res) => {
   }
 });
 
+
 // Search employees
 app.get('/employees/search', async (req, res) => {
   try {
-    const { query } = req.query;
-    const result = await pool.query(
-      `SELECT e.*, 
-              p.name as position_name,
-              d.name as department_name
-       FROM employees e
-       LEFT JOIN positions p ON e.position_id = p.id
-       LEFT JOIN departments d ON e.department_id = d.id
-       WHERE 
-         e.full_name ILIKE $1 OR
-         e.email ILIKE $1 OR
-         e.passport_number ILIKE $1 OR
-         e.phone_number ILIKE $1`,
-      [`%${query}%`]
-    );
+    const { field, value } = req.query;
+    
+    let query = `
+      SELECT DISTINCT e.*,
+        p.name as position_name,
+        d.name as department_name,
+        et.name as employment_type_name,
+        eh.university,
+        eh.degree,
+        eh.graduation_year,
+        we.company_name as previous_company,
+        we.job_title as previous_position,
+        we.years_of_experience,
+        CASE 
+          WHEN e.full_name ILIKE $2 THEN 0 
+          ELSE 1 
+        END as name_rank
+      FROM employees e
+      LEFT JOIN positions p ON e.position_id = p.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN employment_types et ON e.employment_type_id = et.id
+      LEFT JOIN education_history eh ON e.id = eh.employee_id
+      LEFT JOIN work_experience we ON e.id = we.employee_id
+      WHERE `;
+
+    let searchValue;
+    let queryParams = [];
+
+    // Add WHERE clause based on search field
+    switch (field) {
+      case 'full_name':
+      query += `(
+        e.full_name ILIKE $1 OR 
+        LOWER(e.full_name) LIKE LOWER($1) OR
+        REPLACE(LOWER(e.full_name), ' ', '') LIKE LOWER(REPLACE($1, ' ', ''))
+      )`;
+      queryParams.push(`%${value}%`);
+      break;
+
+    case 'email':
+      query += `LOWER(e.email) LIKE LOWER($1)`;
+      queryParams.push(`%${value}%`);
+      break;
+
+    case 'phone_number':
+      // Remove spaces and special characters from phone number
+      searchValue = value.replace(/[\s\-\(\)\+]/g, '');
+      query += `REPLACE(REPLACE(REPLACE(REPLACE(e.phone_number, ' ', ''), '-', ''), '(', ''), ')', '') LIKE $1`;
+      queryParams.push(`%${searchValue}%`);
+      break;
+
+    case 'passport_number':
+      // Remove spaces from passport number
+      searchValue = value.replace(/\s/g, '');
+      query += `REPLACE(e.passport_number, ' ', '') LIKE $1`;
+      queryParams.push(`%${searchValue}%`);
+      break;
+
+    // Location-based search
+    case 'city':
+      query += `(
+        LOWER(e.city) LIKE LOWER($1) OR
+        LOWER(REPLACE(e.city, ' ', '')) LIKE LOWER(REPLACE($1, ' ', ''))
+      )`;
+      queryParams.push(`%${value}%`);
+      break;
+
+    case 'country':
+      query += `(
+        LOWER(e.country) LIKE LOWER($1) OR
+        LOWER(REPLACE(e.country, ' ', '')) LIKE LOWER(REPLACE($1, ' ', ''))
+      )`;
+      queryParams.push(`%${value}%`);
+      break;
+      
+      case 'nationality':
+        query += `LOWER(e.nationality) LIKE LOWER($1)`;
+        queryParams.push(`%${value}%`);
+        break;
+
+        case 'gender':
+          query += `LOWER(e.gender) LIKE LOWER($1)`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        // Education-related search
+        case 'university':
+          query += `(
+            LOWER(eh.university) LIKE LOWER($1) OR
+            LOWER(REPLACE(eh.university, ' ', '')) LIKE LOWER(REPLACE($1, ' ', ''))
+          )`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        case 'degree':
+          query += `LOWER(eh.degree) LIKE LOWER($1)`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        case 'graduation_year':
+          query += `CAST(eh.graduation_year AS TEXT) LIKE $1`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        // Work experience search
+        case 'company_name':
+          query += `(
+            LOWER(we.company_name) LIKE LOWER($1) OR
+            LOWER(REPLACE(we.company_name, ' ', '')) LIKE LOWER(REPLACE($1, ' ', ''))
+          )`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        case 'job_title':
+          query += `LOWER(we.job_title) LIKE LOWER($1)`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        case 'department':
+          query += `LOWER(d.name) LIKE LOWER($1)`;
+          queryParams.push(`%${value}%`);
+          break;
+  
+        case 'position':
+          query += `LOWER(p.name) LIKE LOWER($1)`;
+          queryParams.push(`%${value}%`);
+          break;
+      
+      default:
+        query += `(
+          e.full_name ILIKE $1 OR
+          e.email ILIKE $1 OR
+          e.phone_number ILIKE $1 OR
+          e.passport_number ILIKE $1 OR
+          e.nationality ILIKE $1 OR
+          e.city ILIKE $1 OR
+          e.country ILIKE $1 OR
+          eh.university ILIKE $1 OR
+          eh.degree ILIKE $1 OR
+          we.company_name ILIKE $1 OR
+          d.name ILIKE $1 OR
+          p.name ILIKE $1
+        )`;
+        queryParams.push(`%${value}%`);
+    }
+
+    // Add ordering using the computed name_rank column
+    query += `
+      ORDER BY 
+        name_rank,
+        e.full_name ASC
+    `;
+    
+    // Add the value parameter for the name_rank calculation
+    queryParams.push(`%${value}%`);
+
+    const result = await pool.query(query, queryParams);
     res.json(result.rows);
   } catch (err) {
+    console.error('Search error:', err);
     res.status(500).json({ error: err.message });
   }
 });
