@@ -11,7 +11,6 @@ router.post('/register', async (req, res) => {
     try {
         const { username, email, password } = req.body;
         
-        // Check if user already exists
         const userCheck = await pool.query(
             'SELECT * FROM users WHERE email = $1',
             [email]
@@ -21,11 +20,9 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'User already exists' });
         }
 
-        // Hash password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Insert user
         const result = await pool.query(
             'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email, role',
             [username, email, hashedPassword]
@@ -33,7 +30,6 @@ router.post('/register', async (req, res) => {
 
         const user = result.rows[0];
         
-        // Create token
         const token = jwt.sign(
             { id: user.id, email: user.email, username:user.username, role: user.role },
             JWT_SECRET,
@@ -52,7 +48,6 @@ router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Find user
         const result = await pool.query(
             'SELECT * FROM users WHERE email = $1',
             [email]
@@ -64,14 +59,12 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Check password
         const isValidPassword = await bcrypt.compare(password, user.password);
 
         if (!isValidPassword) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Create token
         const token = jwt.sign(
             { id: user.id, email: user.email, username:user.username, role: user.role },
             JWT_SECRET,
